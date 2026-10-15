@@ -14,7 +14,7 @@ version: "v6.2"
 license: "AGPL-3.0-only"
 date-released: "2026-10-15"
 repository-code: "https://github.com/iandk-labs/Wutapiu"
-# doi: "10.5281/zenodo.XXXXXXX"
+doi: 10.5281/zenodo.23404125
 keywords:
   - artificial-intelligence
   - machine-learning
