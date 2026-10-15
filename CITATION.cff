@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: "If you use this AI model in your research, please cite it as indicated below."
+title: "Wutapiu v6.2: Spectral Linguistic Artificial Intelligence Model with Sense Clouds"
+abstract: >
+  An artificial intelligence model for natural language processing based on spectral
+  representations and sense clouds for contextual disambiguation. Implements the
+  Zero Mutation on Read principle, ensuring knowledge integrity during inference.
+  Supports Spanish and English with SQLite persistence and learning through text ingestion.
+type: software
+authors:
+  - name: "Iandk Labs"
+    affiliation: "Iandk Labs, Department of Computer Engineering"
+version: "v6.2"
+license: "AGPL-3.0-only"
+date-released: "2026-10-15"
+repository-code: "https://github.com/iandk-labs/Wutapiu"
+# doi: "10.5281/zenodo.XXXXXXX"
+keywords:
+  - artificial-intelligence
+  - machine-learning
+  - natural-language-processing
+  - NLP
+  - spectral-representations
+  - sense-clouds
+  - word-sense-disambiguation
+  - computational-linguistics
+  - python
+  - spanish
+  - english
+languages:
+  - es
+  - en
+institution:
+  name: "Iandk Labs"
+  department: "Department of Computer Engineering"
