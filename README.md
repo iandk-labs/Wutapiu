@@ -34,7 +34,7 @@ The model employs sense clouds for automatic polysemy disambiguation through con
 The system is organized into five principal modules:
 
 1. **Sparse Structures** (`SparseBinaryMatrix`, `MarkovRelationalMatrix`) — Storage of morphological relations and grammatical category transitions
-2. **Language Profiles** (`SpanishProfile`, `EnglishProfile`) — Tokenization, morpheme identification, and root candidate generation
+2. **Language Profiles** (`SpanishProfile`, `EnglishProfile`) — Tokenization, morphemic identification, and root candidate generation
 3. **Sense Clouds** (`SenseCloud`, `SpectralSenseClouds`) — Contextual disambiguation with pure read mode and periodic merging
 4. **Spectral Core** (`SpectralCore`) — Wave representation, resonance, interference, and phase computation
 5. **Integrated Core** (`CheyenneLakota`) — Orchestration of all components, ingestion, generation, and persistence
