@@ -152,7 +152,7 @@ The spectrum of a word minus the vocabulary mean spectrum, emphasizing the disti
 
 ### Sense Cloud
 
-A contextual cluster associated with a specific lexeme. Each cloud accumulates evidence from contexts where the lexeme appears, representing a distinct sense. Cloud mass indicates the accumulated evidence weight.
+A contextual cluster associated with a specific lexeme. Each cloud accumulates evidence from contexts where the lexeme appears, representing a distinct sense. Cloud mass indicates the weight of the accumulated evidence.
 
 ## License
 
@@ -183,5 +183,5 @@ Iandk Labs. (2026). *Wutapiu v6.2: Spectral Linguistic Artificial Intelligence M
 ## Limitations
 
 - The model learns exclusively from ingested text; no pre-trained knowledge is included
-- Sufficient text volume is required for the robust sense cloud formation
+- A Large enough volume of text is required for the robust sense cloud formation
 - Response generation is associative rather than propositional, producing chains of spectrally related terms
