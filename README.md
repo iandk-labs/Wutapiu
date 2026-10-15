@@ -178,7 +178,7 @@ When using this model in research or academic work, please cite as follows:
 
 APA format:
 
-> Iandk Labs. (2026). *Wutapiu v6.2: Spectral Linguistic Artificial Intelligence Model with Sense Clouds* (v6.2) [AI model]. Iandk Labs, Department of Computer Engineering. https://github.com/iandk-labs/Wutapiu
+Iandk Labs. (2026). *Wutapiu v6.2: Spectral Linguistic Artificial Intelligence Model with Sense Clouds* (v6.2) [AI model]. Iandk Labs, Department of Computer Engineering. https://doi.org/10.5281/zenodo.23404125
 
 ## Limitations
 
