@@ -54,9 +54,9 @@ The system is organized into five principal modules:
 
 ## Requirements
 
-- Python 3.8 or higher
-- NumPy 1.20 or higher
-- PyPDF2 1.26 or higher (optional, for PDF file processing)
+- Python >= 3.8 
+- NumPy >= 1.20 
+- PyPDF2 >= 1.26 (optional, for PDF file processing)
 
 ## Installation
 
@@ -82,7 +82,7 @@ python Wutapiu.py en
 
 - `>>correct: ...` — Corrects the previous response (English interface)
 - `>>corrige: ...` — Corrects the previous response (Spanish interface)
-- `quit`, `exit`, or `salir` — Terminates execution and persists the model state
+- `quit`, `exit`, or `salir` — Terminates execution and saves the model state
 
 ### Corpus Loading
 
@@ -136,11 +136,11 @@ Wutapiu/
 
 ### Spectral Resonance
 
-A similarity measure between two complex waves, computed as the normalized complex inner product. Values range from 0.0 (no resonance) to 1.0 (maximum resonance).
+Is a similarity measure between two complex waves, computed as the normalized complex inner product. Values range from 0.0 (no resonance) to 1.0 (maximum resonance).
 
 ### Interference
 
-Indicates phase alignment between spectral representations. Values range from -1.0 (destructive interference) to +1.0 (constructive interference).
+It Indicates phase alignment between spectral representations. Values range from -1.0 (destructive interference) to +1.0 (constructive interference).
 
 ### Spectral Phase
 
@@ -183,5 +183,5 @@ Iandk Labs. (2026). *Wutapiu v6.2: Spectral Linguistic Artificial Intelligence M
 ## Limitations
 
 - The model learns exclusively from ingested text; no pre-trained knowledge is included
-- Sufficient text volume is required for robust sense cloud formation
+- Sufficient text volume is required for the robust sense cloud formation
 - Response generation is associative rather than propositional, producing chains of spectrally related terms
