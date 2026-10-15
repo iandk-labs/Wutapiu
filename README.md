@@ -171,7 +171,7 @@ When using this model in research or academic work, please cite as follows:
   publisher    = {Zenodo},
   institution  = {Iandk Labs, Department of Computer Engineering},
   version      = {v6.2},
-  doi          = {[doi: 10.5281/zenodo.23404125]},
+  doi          = {doi: 10.5281/zenodo.23404125},
   url          = {https://github.com/iandk-labs/Wutapiu}
 }
 ```
