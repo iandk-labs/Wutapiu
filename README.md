@@ -165,7 +165,7 @@ When using this model in research or academic work, please cite as follows:
 ```bibtex
 @software{wutapiu_v6_2,
   author       = {Iandk Labs},
-  title        = {Wutapiu v6.2: Spectral Linguistic Artificial Intelligence Model with Sense Clouds},
+  title        = {Wutapiu v6.2: Spectral Linguistic Artificial Intelligence computer software with Sense Clouds},
   month        = oct,
   year         = 2026,
   publisher    = {Zenodo},
