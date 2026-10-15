@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Wutapiu v6.2 AI
-Iandk Labs (DOI)OCT-2026
+Iandk Labs - DOI: 10.5281/zenodo.23404125 — OCT-2026
 ====================================
  Zero Mutation on Read
   • learning=False never touches clouds: no empty list creation
