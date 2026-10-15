@@ -91,7 +91,7 @@ Place text files (`.txt`) or PDF documents (`.pdf`) in the `corpus/` directory. 
 ### Programmatic Interface
 
 ```python
-from WutapiuV6_2 import CheyenneLakota
+from Wutapiu import CheyenneLakota
 
 # Initialize the AI model
 model = CheyenneLakota("en")
