@@ -182,6 +182,6 @@ Iandk Labs. (2026). *Wutapiu v6.2: Spectral Linguistic Artificial Intelligence M
 
 ## Limitations
 
-- The model learns exclusively from ingested text; no pre-trained knowledge is included
-- A Large enough volume of text is required for the robust sense cloud formation
-- Response generation is associative rather than propositional, producing chains of spectrally related terms
+- The model learns exclusively from ingested text; no pre-trained knowledge is included.
+- A Large enough volume of text is required for the robust sense cloud formation.
+- Response generation is associative rather than propositional, producing chains of spectrally related terms.
