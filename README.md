@@ -6,7 +6,7 @@
 
 Zero Mutation on Read
 
-This repository contains the Wutapiu artificial intelligence model, a natural language processing system based on spectral representations and sense clouds. The model implements the principle of Zero Mutation on Read: the response generation phase never modifies knowledge structures. Only text ingestion and explicit user corrections alter the model parameters.
+This repository contains the Wutapiu artificial intelligence model, a natural language processing system based on spectral representations and sense clouds. The model implements the principle of Zero Mutation on Read: the response generation phase never modifies knowledge structures. Only`` text ingestion and explicit user corrections alter the model parameters.
 
 Version 6 introduces periodic same-sense cloud merging. Version 6.2 includes KeyError protection and uses SenseCloud.merge() for robust cloud fusion operations.
 
@@ -72,10 +72,10 @@ pip install -r requirements.txt
 
 ```bash
 # Spanish (default)
-python WutapiuV6.2.py es
+python Wutapiu.py es
 
 # English
-python WutapiuV6.2.py en
+python Wutapiu.py en
 ```
 
 ### Commands
@@ -122,7 +122,7 @@ model.close()
 
 ```
 Wutapiu/
-├── WutapiuV6.2.py      # Main AI model implementation
+├── Wutapiu.py      # Main AI model implementation
 ├── README.md           # This document
 ├── LICENSE             # License terms (GNU AGPL v3.0)
 ├── CITATION.cff        # Citation metadata
@@ -171,7 +171,7 @@ When using this model in research or academic work, please cite as follows:
   publisher    = {Zenodo},
   institution  = {Iandk Labs, Department of Computer Engineering},
   version      = {v6.2},
-  doi          = {doi: 10.5281/zenodo.23404125},
+  doi          = {10.5281/zenodo.23404125},
   url          = {https://github.com/iandk-labs/Wutapiu}
 }
 ```
