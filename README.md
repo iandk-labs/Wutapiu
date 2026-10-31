@@ -1,5 +1,5 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23404125.svg)](https://doi.org/10.5281/zenodo.23404125)
-# Wutapiu v6.2
+# Wutapiu v6.5
 
 
 ## Spectral Linguistic Artificial Intelligence Model with Sense Clouds
@@ -8,14 +8,9 @@ Zero Mutation on Read
 
 This repository contains the Wutapiu artificial intelligence model, a natural language processing system based on spectral representations and sense clouds. The model implements the principle of Zero Mutation on Read: the response generation phase never modifies knowledge structures. Only`` text ingestion and explicit user corrections alter the model parameters.
 
-Version 6 introduces periodic same-sense cloud merging. Version 6.2 includes KeyError protection and uses SenseCloud.merge() for robust cloud fusion operations.
+Version 6 introduces periodic same-sense cloud merging. Version 6.2 includes KeyError protection and uses SenseCloud.merge() for robust cloud fusion operations. Version 6.5 overflow protection .
 
-### Philosophical Foundations
 
-- The crystal does not carve itself while it reflects.
-- What has not been learned cannot be assumed to exist.
-- Structure holds kinship; context holds meaning.
-- Form is the face; the root is the voice.
 
 ## Affiliation
 
@@ -111,12 +106,13 @@ print(response)
 model.close()
 ```
 
-## Version 6.2 Changes
+## Version 6.5 Changes
 
 - KeyError protection in `weaken_link()` method with orphan link removal
 - Robust cloud merging through `SenseCloud.merge()` method
 - Corrected spectral link persistence mechanisms
 - Spectral resonance-based cloud merging instead of cosine similarity
+- Overflow protection & Increased Perfomance.
 
 ## File Structure
 
@@ -132,7 +128,7 @@ Wutapiu/
 └── wutapiu_<lang>.db   # SQLite knowledge base (auto-created)
 ```
 
-## Theoretical Framework
+## Theoretical Framework ##
 
 ### Spectral Resonance
 
@@ -163,14 +159,14 @@ This work is distributed under the GNU Affero General Public License v3.0. See t
 When using this model in research or academic work, please cite as follows:
 
 ```bibtex
-@software{wutapiu_v6_2,
+@software{wutapiu_v6_5,
   author       = {Iandk Labs},
-  title        = {Wutapiu v6.2: Spectral Linguistic Artificial Intelligence computer software with Sense Clouds},
+  title        = {Wutapiu v6.5: Spectral Linguistic Artificial Intelligence computer software with Sense Clouds},
   month        = oct,
   year         = 2026,
   publisher    = {Zenodo},
   institution  = {Iandk Labs, Department of Computer Engineering},
-  version      = {v6.2},
+  version      = {v6.5},
   doi          = {10.5281/zenodo.23404125},
   url          = {https://github.com/iandk-labs/Wutapiu}
 }
@@ -178,7 +174,7 @@ When using this model in research or academic work, please cite as follows:
 
 APA format:
 
-Iandk Labs. (2026). *Wutapiu v6.2: Spectral Linguistic Artificial Intelligence Model with Sense Clouds* (v6.2) [AI model]. Iandk Labs, Department of Computer Engineering. https://doi.org/10.5281/zenodo.23404125
+Iandk Labs. (2026). *Wutapiu v6.5: Spectral Linguistic Artificial Intelligence Model with Sense Clouds* (v6.5) [AI model]. Iandk Labs, Department of Computer Engineering. https://doi.org/10.5281/zenodo.23404125
 
 ## Limitations
 
