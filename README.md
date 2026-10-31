@@ -6,10 +6,9 @@
 
 Zero Mutation on Read
 
-This repository contains the Wutapiu artificial intelligence model, a natural language processing system based on spectral representations and sense clouds. The model implements the principle of Zero Mutation on Read: the response generation phase never modifies knowledge structures. Only`` text ingestion and explicit user corrections alter the model parameters.
+This repository contains the Wutapiu artificial intelligence model, a natural language processing system based on spectral representations and sense clouds. The model implements the principle of Zero Mutation on Read: the response generation phase never modifies knowledge structures. Only text ingestion and explicit user corrections alter the model parameters.
 
-Version 6 introduces periodic same-sense cloud merging. Version 6.2 includes KeyError protection and uses SenseCloud.merge() for robust cloud fusion operations. Version 6.5 overflow protection .
-
+Version 6 introduces periodic same-sense cloud merging. Version 6.2 includes KeyError protection and uses SenseCloud.merge() for robust cloud fusion operations. Version 6.5 with overflow protection & increased perfomance.
 
 
 ## Affiliation
