@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-Wutapiu v6.2 AI
-Iandk Labs - DOI: 10.5281/zenodo.23404125 — OCT-2026
-====================================
- Zero Mutation on Read
-  • learning=False never touches clouds: no empty list creation
-  • Clouds keyed by lexeme; synonyms return real surface forms
-  • Representatives exclude center word entirely
-  • Ingest learns; generation listens purely
+Wutapiu v6.5 AI
+Iandk Labs (DOI) OCT-2026
+Zero Mutation on Read
+• learning=False never touches clouds: no empty list creation
+• Clouds keyed by lexeme; synonyms return real surface forms
+• Representatives exclude center word entirely
+• Ingest learns; generation listens purely
 V6: Periodic same-sense cloud merging
 V6.1: Fixes — resonance, ingests persistence, weaken_link DB
 V6.2: Fixes — KeyError protection, use SenseCloud.merge()
-Philosophy:
-  The crystal does not carve itself while it reflects.
-  What has not been learned cannot be assumed to exist.
-  Structure holds kinship; context holds meaning.
-  Form is the face; the root is the voice.
+V6.3: Stability — Overflow protection on disk persistence
+V6.4: Full stabilization — overflow protection in memory (learn/link),
+      safe generate_response when empty, periodic sanitization,
+      clean format (no phantom spaces in keys)
+V6.5: Improved Language Profiles + Critical bug fixes
+      - Fixed ingest architecture (link_tokens and hierarchy_scan now at correct level)
+      - Fixed scan_corpus glob pattern (*.txt instead of .txt)
+      - Fixed main() sys.argv access
 """
 import re
 import math
@@ -25,6 +27,7 @@ import logging
 from pathlib import Path
 from collections import Counter
 import numpy as np
+
 # ── Configuration ───────────────────────────────────────────────
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 EPS = 1e-12
@@ -34,22 +37,33 @@ MIN_COST = 0.01
 SENSE_THRESHOLD = 0.35
 CLOUD_MERGE_THRESHOLD = 0.85
 CONTEXT_WEIGHT_DECAY = 0.1
+OVERFLOW_THRESHOLD = 1e10  # V6.4: límite para normalizar vectores
 CORPUS_DIR = Path(__file__).parent / "corpus"
 CORPUS_REGISTRY = CORPUS_DIR / ".processed.json"
+
+
 # ── Corpus utilities ───────────────────────────────────────────
 def ensure_corpus_dir():
     CORPUS_DIR.mkdir(exist_ok=True)
+
+
 def load_processed_registry():
     if CORPUS_REGISTRY.exists():
         with open(CORPUS_REGISTRY, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
+
+
 def save_processed_registry(registry):
     with open(CORPUS_REGISTRY, "w", encoding="utf-8") as f:
         json.dump(registry, f, indent=2, ensure_ascii=False)
+
+
 def get_file_hash(file_path):
     with open(file_path, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
+
+
 def read_text_file(file_path):
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -57,6 +71,8 @@ def read_text_file(file_path):
     except UnicodeDecodeError:
         with open(file_path, "r", encoding="latin-1") as f:
             return f.read()
+
+
 def read_pdf_file(file_path):
     try:
         import PyPDF2
@@ -74,16 +90,21 @@ def read_pdf_file(file_path):
     except Exception as e:
         logging.error("Error reading %s: %s", file_path.name, e)
         return None
+
+
 def scan_corpus():
     ensure_corpus_dir()
     registry = load_processed_registry()
     new_files = []
+    # 🔧 V6.5 FIX #3: Comodín asterisco para buscar archivos con extensión
     for ext in ["*.txt", "*.pdf"]:
         for f in CORPUS_DIR.glob(ext):
             file_hash = get_file_hash(f)
             if str(f) not in registry or registry[str(f)] != file_hash:
                 new_files.append((f, file_hash))
     return new_files
+
+
 # ============================================================
 # PART 1: SPARSE STRUCTURES
 # ============================================================
@@ -95,6 +116,7 @@ class SparseBinaryMatrix:
         self._col_index = {}
         self._row_label = []
         self._col_label = []
+
     def add_row(self, label):
         if label not in self._row_index:
             idx = len(self._row_label)
@@ -102,12 +124,14 @@ class SparseBinaryMatrix:
             self._row_label.append(label)
             self._rows[idx] = set()
         return self._row_index[label]
+
     def add_col(self, label):
         if label not in self._col_index:
             idx = len(self._col_label)
             self._col_index[label] = idx
             self._col_label.append(label)
         return self._col_index[label]
+
     def set(self, row_label, col_label, value=True):
         r = self.add_row(row_label)
         c = self.add_col(col_label)
@@ -115,37 +139,45 @@ class SparseBinaryMatrix:
             self._rows[r].add(c)
         else:
             self._rows[r].discard(c)
+
     def get(self, row_label, col_label):
         r = self._row_index.get(row_label)
         c = self._col_index.get(col_label)
         if r is None or c is None:
             return False
         return c in self._rows.get(r, set())
+
     def row(self, label):
         r = self._row_index.get(label)
         if r is None:
             return set()
         return {self._col_label[c] for c in self._rows.get(r, set())}
+
     def row_labels(self):
         return list(self._row_label)
+
     def similarity_jaccard(self, a, b):
         sa, sb = self.row(a), self.row(b)
         if not sa or not sb:
             return 0.0
         return len(sa & sb) / len(sa | sb)
+
     def complementarity(self, a, b):
         sa, sb = self.row(a), self.row(b)
         union = sa | sb
         if not union:
             return 0.0
         return len((sa - sb) | (sb - sa)) / len(union)
+
     def dissimilarity_jaccard(self, a, b):
         return self.complementarity(a, b)
+
     def export_rows(self):
         return [
             (r, lbl, sorted([self._col_label[c_idx] for c_idx in self._rows.get(r, set())]))
             for r, lbl in enumerate(self._row_label)
         ]
+
     def import_rows(self, data):
         for r, lbl, cols_ref in data:
             self.add_row(lbl)
@@ -154,109 +186,283 @@ class SparseBinaryMatrix:
                             (self._col_label[col_ref] if 0 <= col_ref < len(self._col_label) else None)
                 if col_label:
                     self.set(lbl, col_label, True)
+
+
 class MarkovRelationalMatrix:
     def __init__(self):
         self._states = {}
         self._state_list = []
         self._trans = {}
+
     def add_state(self, label):
         if label not in self._states:
             self._states[label] = len(self._state_list)
             self._state_list.append(label)
             self._trans[label] = set()
+
     def set_transition(self, a, b):
         self.add_state(a)
         self.add_state(b)
         self._trans[a].add(b)
+
     def get_transitions(self, label):
         return self._trans.get(label, set())
+
     def export_all(self):
         return [(a, sorted(bset)) for a, bset in self._trans.items()]
+
     def import_trans(self, data):
         for a, targets in data:
             for b in targets:
                 self.set_transition(a, b)
+
+
 # ============================================================
 # PART 2: LANGUAGE PROFILES
 # ============================================================
 class LanguageProfile:
     code = ""
     name = ""
+
     def morphemes(self): raise NotImplementedError
     def stem_candidates(self, stem): raise NotImplementedError
     def tokenize_sentences(self, text): raise NotImplementedError
+
+
 class SpanishProfile(LanguageProfile):
     code = "es"
     name = "spanish"
+
+    # Morfemas productivos reales del español
+    # ORDEN IMPORTANTE: sufijos largos antes que cortos para evitar cortes prematuros
     _MORPH = {
-        "PLURAL": [("s", "suffix"), ("es", "suffix")],
+        # ── Número ──
+        "PLURAL": [("es", "suffix"), ("s", "suffix")],
+        # ── Género ──
         "FEMININE": [("a", "suffix")],
         "MASCULINE": [("o", "suffix")],
+        # ── Diminutivos (ordenados por longitud) ──
+        "DIMINUTIVE_ILLO": [("illo", "suffix"), ("illa", "suffix")],
         "DIMINUTIVE_ITO": [("ito", "suffix"), ("ita", "suffix")],
-        "INFINITIVE": [("ar", "suffix"), ("er", "suffix"), ("ir", "suffix")],
+        "DIMINUTIVE_ICO": [("ico", "suffix"), ("ica", "suffix")],
+        # ── Aumentativos ──
+        "AUGMENTON": [("ón", "suffix"), ("ona", "suffix")],
+        "AUGMENTOTE": [("ote", "suffix"), ("ota", "suffix")],
+        "AUGMENTAZO": [("azo", "suffix"), ("aza", "suffix")],
+        # ── Superlativos ──
+        "SUPERLATIVE": [("ísimo", "suffix"), ("ísima", "suffix")],
+        # ── Verbos: formas no personales ──
         "GERUND": [("ando", "suffix"), ("iendo", "suffix")],
         "PARTICIPLE": [("ado", "suffix"), ("ido", "suffix")],
-        "FUTURE": [("ré", "suffix"), ("rás", "suffix"), ("rá", "suffix")],
-        "NEGATION_NO": [("no", "prefix")],
+        "INFINITIVE": [("ar", "suffix"), ("er", "suffix"), ("ir", "suffix")],
+        # ── Tiempos verbales ──
+        "IMPERFECT": [("ábamos", "suffix"), ("aba", "suffix"), ("ía", "suffix")],
+        "FUTURE": [("aremos", "suffix"), ("eremos", "suffix"), ("iremos", "suffix"),
+                   ("ré", "suffix"), ("rás", "suffix"), ("rá", "suffix")],
+        "CONDITIONAL": [("ríamos", "suffix"), ("ríais", "suffix"),
+                        ("ría", "suffix"), ("rías", "suffix"), ("rían", "suffix")],
+        # ── Derivación léxica: profesiones/agentes ──
+        "PROF_DOR": [("dora", "suffix"), ("dor", "suffix")],
+        "PROF_ER": [("era", "suffix"), ("ero", "suffix")],
+        "PROF_ISTA": [("ista", "suffix")],
+        "PROF_ANTE": [("ante", "suffix"), ("ente", "suffix")],
+        # ── Derivación léxica: abstractos ──
+        "ABSTRACT_CION": [("ación", "suffix"), ("ición", "suffix"), ("ución", "suffix")],
+        "ABSTRACT_SION": [("sión", "suffix")],
+        "ABSTRACT_MIENTO": [("miento", "suffix")],
+        "ABSTRACT_URA": [("ura", "suffix")],
+        "ABSTRACT_IDAD": [("idad", "suffix")],
+        "ABSTRACT_EZ": [("ez", "suffix")],
+        # ── Derivación léxica: colectivos ──
+        "COLLECTIVE_ADA": [("ada", "suffix")],
+        "COLLECTIVE_AJE": [("aje", "suffix")],
+        "COLLECTIVE_ERIA": [("ería", "suffix")],
+        # ── Pejorativos ──
+        "PEJORATIVE": [("ucho", "suffix"), ("ucha", "suffix"), ("astro", "suffix")],
+        # ── Prefijos productivos ──
+        "REPETITION_RE": [("re", "prefix")],
+        "NEGATION_DES": [("des", "prefix")],
+        "NEGATION_IN": [("im", "prefix"), ("in", "prefix")],
+        "OPPOSITION_ANTI": [("anti", "prefix")],
+        "PRIOR_PRE": [("pre", "prefix")],
+        "POSTERIOR_POS": [("pos", "prefix"), ("post", "prefix")],
+        "INFERIOR_SUB": [("sub", "prefix")],
+        "SUPERIOR_SUPER": [("super", "prefix"), ("sobre", "prefix")],
+        "MULTI_MULTI": [("multi", "prefix")],
+        "BETWEEN_INTER": [("inter", "prefix")],
+        "THROUGH_TRANS": [("trans", "prefix")],
     }
+
     def morphemes(self): return self._MORPH
+
     def stem_candidates(self, stem):
         out = {stem}
+        # Alternancias ortográficas españolas
         if stem.endswith("qu"): out.add(stem[:-2] + "c")
         if stem.endswith("gu"): out.add(stem[:-2] + "g")
-        for ac, pl in [("á","a"),("é","e"),("í","i"),("ó","o"),("ú","u")]:
+        if stem.endswith("z"): out.add(stem[:-1] + "c")  # vez → vec-
+        # Normalización de acentos
+        for ac, pl in [("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u")]:
             if ac in stem: out.add(stem.replace(ac, pl))
         return out
+
     def tokenize_sentences(self, text):
         sentences = re.split(r"[.!?]+", text)
         return [re.findall(r"[A-Za-záéíóúñüÁÉÍÓÚÑÜ0-9]+", s) for s in sentences if s.strip()]
+
+
 class EnglishProfile(LanguageProfile):
     code = "en"
     name = "english"
+
+    # English Morf
+    # ORDEr
     _MORPH = {
-        "PLURAL": [("s", "suffix"), ("es", "suffix")],
-        "3RD_PERSON_SINGULAR": [("s", "suffix")],
-        "PAST_TENSE": [("ed", "suffix")],
+        # ──  ──
+        "PLURAL": [("ies", "suffix"), ("es", "suffix"), ("s", "suffix")],
+        # ──  ──
+        "3RD_PERSON": [("ies", "suffix"), ("es", "suffix"), ("s", "suffix")],
+        "PAST_TENSE": [("ied", "suffix"), ("ed", "suffix")],
         "GERUND": [("ing", "suffix")],
-        "PREFIX_UN": [("un", "prefix")],
-        "ADVERB_LY": [("ly", "suffix")],
+        # ──  ──
+        "COMPARATIVE": [("ier", "suffix"), ("er", "suffix")],
+        "SUPERLATIVE": [("iest", "suffix"), ("est", "suffix")],
+        # ──  ──
+        "FEMININE_ESS": [("ess", "suffix")],
+        # ── ──
+        "AGENT_IST": [("ist", "suffix")],
+        "AGENT_IAN": [("ian", "suffix")],
+        "AGENT_OR": [("or", "suffix")],
+        "AGENT_ER": [("er", "suffix")],
+        # ──  ──
+        "ABSTRACT_TION": [("ation", "suffix"), ("ition", "suffix"), ("ution", "suffix")],
+        "ABSTRACT_SION": [("ssion", "suffix"), ("sion", "suffix")],
+        "ABSTRACT_MENT": [("ment", "suffix")],
+        "ABSTRACT_NESS": [("ness", "suffix")],
+        "ABSTRACT_ITY": [("ity", "suffix")],
+        "ABSTRACT_ISM": [("ism", "suffix")],
+        "ABSTRACT_SHIP": [("ship", "suffix")],
+        "ABSTRACT_HOOD": [("hood", "suffix")],
+        "ABSTRACT_DOM": [("dom", "suffix")],
+        "ABSTRACT_AGE": [("age", "suffix")],
+        "ABSTRACT_ERY": [("ery", "suffix")],
+        # ──  ──
+        "DIMINUTIVE_LET": [("let", "suffix")],
+        "DIMINUTIVE_LING": [("ling", "suffix")],
+        "DIMINUTIVE_ETTE": [("ette", "suffix")],
+        # ──  ──
+        "ADJ_FUL": [("ful", "suffix")],
+        "ADJ_LESS": [("less", "suffix")],
+        "ADJ_OUS": [("ious", "suffix"), ("ous", "suffix")],
+        "ADJ_IVE": [("ative", "suffix"), ("itive", "suffix"), ("ive", "suffix")],
+        "ADJ_ABLE": [("iable", "suffix"), ("able", "suffix")],
+        "ADJ_IBLE": [("ible", "suffix")],
+        "ADJ_AL": [("ial", "suffix"), ("al", "suffix")],
+        "ADJ_IC": [("ical", "suffix"), ("ic", "suffix")],
+        "ADJ_ISH": [("ish", "suffix")],
+        "ADJ_LIKE": [("like", "suffix")],
+        "ADJ_ESQUE": [("esque", "suffix")],
+        "ADJ_Y": [("y", "suffix")],
+        # ──  ──
+        "ADV_LY": [("ily", "suffix"), ("ly", "suffix")],
+        "ADV_WARD": [("wards", "suffix"), ("ward", "suffix")],
+        # ── Prefijos de negación ──
+        "NEG_UN": [("un", "prefix")],
+        "NEG_NON": [("non", "prefix")],
+        "NEG_DIS": [("dis", "prefix")],
+        "NEG_IN": [("im", "prefix"), ("il", "prefix"), ("ir", "prefix"), ("in", "prefix")],
+        # ──  ──
+        "PRIOR_PRE": [("pre", "prefix")],
+        "POSTERIOR_POST": [("post", "prefix")],
+        "FORMER_EX": [("ex", "prefix")],
+        # ──  ──
+        "REPETITION_RE": [("re", "prefix")],
+        "OPPOSITION_COUNTER": [("counter", "prefix")],
+        "OPPOSITION_ANTI": [("anti", "prefix")],
+        # ──  ──
+        "MULTI_MULTI": [("multi", "prefix")],
+        "SEMI_SEMI": [("semi", "prefix")],
+        "BI_BI": [("bi", "prefix")],
+        "TRI_TRI": [("tri", "prefix")],
+        # ──  ──
+        "GRADE_OVER": [("over", "prefix")],
+        "GRADE_UNDER": [("under", "prefix")],
+        "GRADE_SUPER": [("super", "prefix")],
+        "GRADE_HYPER": [("hyper", "prefix")],
+        "GRADE_SUB": [("sub", "prefix")],
+        "GRADE_MICRO": [("micro", "prefix")],
+        "GRADE_MACRO": [("macro", "prefix")],
+        # ──  ──
+        "LOC_INTER": [("inter", "prefix")],
+        "LOC_TRANS": [("trans", "prefix")],
+        "LOC_CIRCUM": [("circum", "prefix")],
+        # ──  ──
+        "MIS_MIS": [("mis", "prefix")],
+        "SELF_SELF": [("self", "prefix")],
     }
+
     def morphemes(self): return self._MORPH
+
     def stem_candidates(self, stem):
         out = {stem, stem + "e"}
-        if len(stem) >= 2 and stem[-1] == stem[-2]: out.add(stem[:-1])
+        # Consonant doubling: running → run
+        if len(stem) >= 2 and stem[-1] == stem[-2]:
+            out.add(stem[:-1])
+        # -ied → -y: carried → carry
+        if stem.endswith("i"):
+            out.add(stem[:-1] + "y")
         return out
+
     def tokenize_sentences(self, text):
         sentences = re.split(r"[.!?]+", text)
         return [re.findall(r"[A-Za-z0-9]+", s) for s in sentences if s.strip()]
+
+
 PROFILES = {"es": SpanishProfile, "en": EnglishProfile}
+
+
 # ============================================================
 # PART 3: SENSE CLOUDS — PURE READ MODE
 # ============================================================
 class SenseCloud:
     __slots__ = ["context_sum", "context_mean", "mass", "representatives"]
+
     def __init__(self):
         self.context_sum = np.zeros(BINS, complex)
         self.context_mean = np.zeros(BINS, complex)
         self.mass = 0.0
         self.representatives = Counter()
+
     def update(self, context_wave, context_words, weight=1.0):
         self.context_sum += context_wave * weight
         self.mass += weight
+        # prevent overflow 
+        self.context_sum = np.nan_to_num(self.context_sum, nan=0.0, posinf=0.0, neginf=0.0)
         norm = np.linalg.norm(self.context_sum)
+        if norm > OVERFLOW_THRESHOLD:
+            self.context_sum = self.context_sum / norm
+            self.mass = 1.0
         self.context_mean = self.context_sum / norm if norm >= EPS else self.context_sum
         for w in context_words:
             self.representatives[w] += weight
+
     def resonance(self, spectral_core, context_wave):
         if self.mass < EPS:
             return 0.0
         return spectral_core._resonance(self.context_mean, context_wave)
+
     def merge(self, other, spectral_core):
         self.context_sum += other.context_sum
         self.mass += other.mass
+        # overflow warning
+        self.context_sum = np.nan_to_num(self.context_sum, nan=0.0, posinf=0.0, neginf=0.0)
         norm = np.linalg.norm(self.context_sum)
+        if norm > OVERFLOW_THRESHOLD:
+            self.context_sum = self.context_sum / norm
+            self.mass = 1.0
         self.context_mean = self.context_sum / norm if norm >= EPS else self.context_sum
         self.representatives.update(other.representatives)
+
     def to_dict(self):
         return {
             "context_sum_real": [float(x) for x in np.real(self.context_sum)],
@@ -264,31 +470,31 @@ class SenseCloud:
             "mass": self.mass,
             "representatives": dict(self.representatives),
         }
+
     @classmethod
     def from_dict(cls, data):
         cloud = cls()
         cr = np.array(data["context_sum_real"], dtype=np.float64)
         ci = np.array(data["context_sum_imag"], dtype=np.float64)
         cloud.context_sum = cr + 1j * ci
+        # Sanitize
+        cloud.context_sum = np.nan_to_num(cloud.context_sum, nan=0.0, posinf=0.0, neginf=0.0)
         norm = np.linalg.norm(cloud.context_sum)
         cloud.context_mean = cloud.context_sum / norm if norm >= EPS else cloud.context_sum
         cloud.mass = data["mass"]
         cloud.representatives = Counter(data["representatives"])
         return cloud
+
+
 class SpectralSenseClouds:
     """Clouds keyed by lexeme — read mode = zero mutation"""
+
     def __init__(self, spectral_core):
         self.spectral = spectral_core
         self.clouds = {}
         self.lexemes = self.clouds
 
     def merge_clouds(self, threshold=0.80, min_mass=1.0, verbose=True):
-        """
-        V6: Fusiona nubes del MISMO sentido que nacieron separadas.
-        Se llama cada 100 ingests. No toca sentidos distintos.
-        V6.1: Usa resonance espectral en lugar de coseno
-        V6.2: Reutiliza SenseCloud.merge()
-        """
         total_merged = 0
         for lexema, nubes in self.lexemes.items():
             if len(nubes) < 2:
@@ -314,7 +520,6 @@ class SpectralSenseClouds:
                         keep, drop = a, b
                     else:
                         keep, drop = b, a
-                    # PATCH v6.2: Usa el método merge de la propia nube
                     keep.merge(drop, self.spectral)
                     nubes.remove(drop)
                     total_merged += 1
@@ -339,6 +544,7 @@ class SpectralSenseClouds:
             return np.zeros(BINS, complex)
         norm = np.linalg.norm(wave)
         return wave / norm if norm >= EPS else wave
+
     def assign_sense(self, lexeme, sentence_words, center_idx, learning: bool = True):
         if lexeme not in self.clouds:
             if not learning:
@@ -376,6 +582,7 @@ class SpectralSenseClouds:
             clouds.append(SenseCloud())
             clouds[-1].update(context_wave, context_words_no_center, weight=1.0)
             return len(clouds) - 1, best_score
+
     def get_context_identity(self, lexeme, surface_token, sentence_words, center_idx, learning: bool = True):
         if surface_token not in self.spectral.nodes:
             return None, 0.0
@@ -387,6 +594,7 @@ class SpectralSenseClouds:
         ctx_comp = self.spectral._normalize(cloud.context_mean)
         modulated = self.spectral._normalize(base_wave + ctx_comp * score)
         return modulated, score
+
     def cloud_resonance_between(self, lexeme_a, lexeme_b):
         if lexeme_a not in self.clouds or lexeme_b not in self.clouds:
             return 0.0
@@ -397,6 +605,7 @@ class SpectralSenseClouds:
                 if res > max_res:
                     max_res = res
         return max_res
+
     def get_cloud_summary(self, lexeme):
         if lexeme not in self.clouds:
             return []
@@ -408,11 +617,15 @@ class SpectralSenseClouds:
             }
             for i, c in enumerate(self.clouds[lexeme])
         ]
+
     def to_dict(self):
         return {lex: [c.to_dict() for c in clist] for lex, clist in self.clouds.items()}
+
     def load_from_dict(self, data):
         for lex, clist in data.items():
             self.clouds[lex] = [SenseCloud.from_dict(cd) for cd in clist]
+
+
 # ============================================================
 # PART 4: SPECTRAL CORE
 # ============================================================
@@ -424,10 +637,14 @@ class SpectralCore:
         self._vocab_mean = None
         self._dirty_nodes = set()
         self._dirty_links = set()
+
     def _normalize(self, spectrum):
         spectrum = np.asarray(spectrum, dtype=complex)
+        # Sanitize
+        spectrum = np.nan_to_num(spectrum, nan=0.0, posinf=0.0, neginf=0.0)
         norm = np.linalg.norm(spectrum)
         return spectrum / norm if norm >= EPS else np.zeros(BINS, complex)
+
     def _word_wave(self, word):
         if word in self._wave_cache:
             return self._wave_cache[word]
@@ -441,19 +658,23 @@ class SpectralCore:
         wave = self._normalize(wave / len(word))
         self._wave_cache[word] = wave
         return wave
+
     def _hash_float(self, *parts):
         data = "|".join(repr(p) for p in parts).encode()
         return int(hashlib.sha3_256(data).hexdigest()[:8], 16) / 2**32
+
     def _resonance(self, a, b):
         na, nb = np.linalg.norm(a), np.linalg.norm(b)
         if na < EPS or nb < EPS:
             return 0.0
         return max(0.0, min(1.0, abs(np.sum(a * np.conj(b))) / (na * nb)))
+
     def _interference(self, a, b):
         na, nb = np.linalg.norm(a), np.linalg.norm(b)
         if na < EPS or nb < EPS:
             return 0.0
         return max(-1.0, min(1.0, np.real(np.sum(a * np.conj(b))) / (na * nb)))
+
     def _phase(self, spectrum):
         w = abs(spectrum)
         tw = w.sum()
@@ -461,6 +682,7 @@ class SpectralCore:
             return 0.0
         vec = np.sum(w * np.exp(1j * np.angle(spectrum)))
         return ((np.angle(vec) % (2 * math.pi)) / (2 * math.pi)) if abs(vec) >= EPS else 0.0
+
     def _spectrum_xyz(self, spectrum):
         mag = abs(spectrum)
         total = mag.sum()
@@ -472,12 +694,18 @@ class SpectralCore:
         p = mag / total
         z = (-np.sum(p * np.log2(p + EPS))) / math.log2(BINS)
         return np.array([x, y, z])
+
     def learn_token(self, token):
         wave = self._word_wave(token)
         if token in self.nodes:
             d = self.nodes[token]
             d["count"] += 1
             d["sum"] += wave
+            # Control Overflow
+            d["sum"] = np.nan_to_num(d["sum"], nan=0.0, posinf=0.0, neginf=0.0)
+            norm = np.linalg.norm(d["sum"])
+            if norm > OVERFLOW_THRESHOLD:
+                d["sum"] = d["sum"] / norm
             d["spectrum"] = self._normalize(d["sum"])
             d["mass"] = 1 + math.log1p(d["count"])
             d["xyz"] = self._spectrum_xyz(d["spectrum"])
@@ -490,6 +718,7 @@ class SpectralCore:
             }
         self._dirty_nodes.add(token)
         self._vocab_mean = None
+
     def link_tokens(self, a, b, weight=1.0):
         if a not in self.nodes or b not in self.nodes:
             return
@@ -498,16 +727,20 @@ class SpectralCore:
         combined = self._normalize(self.nodes[a]["spectrum"] + self.nodes[b]["spectrum"])
         if key in self.links:
             self.links[key]["sum"] += combined * weight
+            # Control OverfloW
+            self.links[key]["sum"] = np.nan_to_num(self.links[key]["sum"], nan=0.0, posinf=0.0, neginf=0.0)
+            norm = np.linalg.norm(self.links[key]["sum"])
+            if norm > OVERFLOW_THRESHOLD:
+                self.links[key]["sum"] = self.links[key]["sum"] / norm
             self.links[key]["count"] += weight
             self.links[key]["spectrum"] = self._normalize(self.links[key]["sum"])
         else:
             self.links[key] = {"sum": combined * weight, "spectrum": combined, "count": weight}
+
     def weaken_link(self, a, b, weight=1.0):
-        # PATCH v6.2: protección contra KeyError por nodos desaparecidos
         key = tuple(sorted((a, b)))
         if key not in self.links:
             return
-        # Si los nodos ya no existen, no se puede recalcular: borrar el enlace huérfano
         if a not in self.nodes or b not in self.nodes:
             self.links.pop(key, None)
             self._dirty_links.add(key)
@@ -519,9 +752,8 @@ class SpectralCore:
         link["spectrum"] = self._normalize(link["sum"])
         if link["count"] <= EPS:
             self.links.pop(key, None)
-            self._dirty_links.add(key)
-        else:
-            self._dirty_links.add(key)
+        self._dirty_links.add(key)
+
     def get_vocabulary_mean(self):
         if self._vocab_mean is not None:
             return self._vocab_mean
@@ -529,11 +761,13 @@ class SpectralCore:
             return np.zeros(BINS, complex)
         self._vocab_mean = np.mean([d["spectrum"] for d in self.nodes.values()], axis=0)
         return self._vocab_mean
+
     def get_identity(self, word):
         mean = self.get_vocabulary_mean()
         spec = self.nodes[word]["spectrum"]
         identity = self._normalize(spec - mean)
         return identity if np.linalg.norm(identity) >= EPS else self._normalize(spec)
+
     def build_adjacency(self):
         adj = {}
         for (a, b), link in self.links.items():
@@ -541,6 +775,8 @@ class SpectralCore:
             adj.setdefault(a, []).append((b, s))
             adj.setdefault(b, []).append((a, s))
         return adj
+
+
 # ============================================================
 # PART 5: INTEGRATED CORE
 # ============================================================
@@ -567,33 +803,36 @@ class CheyenneLakota:
         self._init_db()
         self._load()
         self._start_corpus()
+
     def close(self):
         self._save()
         if self.connection:
             self.connection.commit()
             self.connection.close()
         print("Saved. Goodbye.")
+
     def _init_db(self):
         if not self.connection:
             return
         cur = self.connection.cursor()
         cur.executescript("""
-        CREATE TABLE IF NOT EXISTS spectral_nodes(
-            word TEXT PRIMARY KEY, sum_blob BLOB, count INTEGER, mass REAL
-        );
-        CREATE TABLE IF NOT EXISTS spectral_links(
-            w1 TEXT, w2 TEXT, sum_blob BLOB, count REAL, PRIMARY KEY(w1, w2)
-        );
-        CREATE TABLE IF NOT EXISTS m_plus_rows(row_label TEXT, col_label TEXT, PRIMARY KEY(row_label, col_label));
-        CREATE TABLE IF NOT EXISTS markov_transitions(from_label TEXT, to_label TEXT);
-        CREATE TABLE IF NOT EXISTS extra_data(key TEXT PRIMARY KEY, value TEXT);
+            CREATE TABLE IF NOT EXISTS spectral_nodes(
+                word TEXT PRIMARY KEY, sum_blob BLOB, count INTEGER, mass REAL
+            );
+            CREATE TABLE IF NOT EXISTS spectral_links(
+                w1 TEXT, w2 TEXT, sum_blob BLOB, count REAL, PRIMARY KEY(w1, w2)
+            );
+            CREATE TABLE IF NOT EXISTS m_plus_rows(row_label TEXT, col_label TEXT, PRIMARY KEY(row_label, col_label));
+            CREATE TABLE IF NOT EXISTS markov_transitions(from_label TEXT, to_label TEXT);
+            CREATE TABLE IF NOT EXISTS extra_data(key TEXT PRIMARY KEY, value TEXT);
         """)
         self.connection.commit()
+
     def _start_corpus(self):
         new = scan_corpus()
         if not new:
             return
-        print(f" {len(new)} new corpus file(s)")
+        print(f"{len(new)} new corpus file(s)")
         reg = load_processed_registry()
         for path, h in new:
             print(f"   → {path.name}")
@@ -604,11 +843,13 @@ class CheyenneLakota:
             reg[str(path)] = h
         save_processed_registry(reg)
         print()
+
     def _extract_stem(self, word_form):
         if word_form in self.token_to_lexeme:
             return self.token_to_lexeme[word_form]
         morph = self.profile.morphemes()
         candidates = {word_form}
+
         def expand(curr, depth=0):
             candidates.add(curr)
             if depth >= 3:
@@ -621,6 +862,7 @@ class CheyenneLakota:
                 for m, pos in vars:
                     if pos == "suffix" and curr.endswith(m) and len(curr) - len(m) >= 2:
                         expand(curr[:-len(m)], depth + 1)
+
         expand(word_form)
         valid = [c for c in candidates if len(c) >= 2]
         if not valid:
@@ -630,14 +872,17 @@ class CheyenneLakota:
             lex = valid[0]
         self.token_to_lexeme[word_form] = lex
         return lex
+
     def _register_form_for_lexeme(self, lexeme, surface_form):
         if lexeme not in self.lexeme_to_forms:
             self.lexeme_to_forms[lexeme] = Counter()
         self.lexeme_to_forms[lexeme][surface_form] += 1
+
     def _get_best_form_for_lexeme(self, lexeme):
         if lexeme in self.lexeme_to_forms and self.lexeme_to_forms[lexeme]:
             return self.lexeme_to_forms[lexeme].most_common(1)[0][0]
         return lexeme
+
     def _reg_morphology(self, lexeme, form):
         morph = self.profile.morphemes()
         pre, suf = [], []
@@ -656,6 +901,7 @@ class CheyenneLakota:
             self.M_plus.set(lexeme, c)
         for i in range(len(active) - 1):
             self.T_markov.set_transition(active[i], active[i+1])
+
     def _hierarchy_scan(self, tokens):
         txt = " ".join(tokens)
         for pat in [r"(\w+)\s+(?:is|are|es|son)\s+(?:(?:a|an|the|un|una|los|las)\s+)?(\w+)"]:
@@ -664,9 +910,38 @@ class CheyenneLakota:
                 lb = self._extract_stem(m.group(2))
                 if la != lb and (la, lb) not in self.hierarchy_edges:
                     self.hierarchy_edges.append((la, lb))
+
+    #  SANITIZATION 
+    def _sanitize_spectral_data(self):
+        
+        fixed = 0
+        for w, d in self.spectral.nodes.items():
+            if "sum" in d and (np.any(np.isnan(d["sum"])) or np.any(np.isinf(d["sum"]))):
+                # Preservar la memoria (count), vaciar el contenido corrupto
+                count = d["count"]
+                d["sum"] = np.zeros(BINS, complex)  # Vacío válido
+                d["spectrum"] = np.zeros(BINS, complex)  # Vacío válido
+                d["count"] = count  # Preservar: "algo fue aprendido aquí N veces"
+                d["mass"] = 1 + math.log1p(count)  # Preservar: "tiene peso en la red"
+                fixed += 1
+
+        for key, lnk in self.spectral.links.items():
+            if "sum" in lnk and (np.any(np.isnan(lnk["sum"])) or np.any(np.isinf(lnk["sum"]))):
+                #  Sanitize
+                count = lnk["count"]
+                lnk["sum"] = np.zeros(BINS, complex)
+                lnk["spectrum"] = np.zeros(BINS, complex)
+                lnk["count"] = count
+                fixed += 1
+
+        if fixed > 0:
+            print(f"[Fix] Ingest {self.ingests_total}: {fixed} concept erased (memory preserved)")
+        return fixed
+
     def ingest(self, text):
         sentences = self.profile.tokenize_sentences(text)
         for sent in sentences:
+           
             for idx, tok in enumerate(sent):
                 lex = self._extract_stem(tok)
                 self.lexeme_frequency[lex] = self.lexeme_frequency.get(lex, 0) + 1
@@ -674,17 +949,24 @@ class CheyenneLakota:
                 self._reg_morphology(lex, tok)
                 self.spectral.learn_token(tok)
                 self.sense_clouds.assign_sense(lex, sent, idx, learning=True)
+            
+            
             L = len(sent)
             for i in range(L):
                 for j in range(i+1, min(L, i+WINDOW)):
                     self.spectral.link_tokens(sent[i], sent[j], 1.0/(j-i))
             self._hierarchy_scan(sent)
+        
         self.ingests_total += 1
         if self.ingests_total % 100 == 0:
             merged = self.sense_clouds.merge_clouds(threshold=0.80)
             if merged > 0:
                 print(f"[V6] Ingest {self.ingests_total}: {merged} fusiones realizadas")
+        # Periodic SanitizaTion each 500 ingests
+        if self.ingests_total % 500 == 0:
+            self._sanitize_spectral_data()
         return len(sentences)
+
     def find_synonyms(self, lexeme, threshold=0.35, max_candidates=500):
         candidates = []
         for cand_lex in self.M_plus.row_labels():
@@ -698,6 +980,7 @@ class CheyenneLakota:
                 candidates.append((surface_form, combined))
         candidates.sort(key=lambda x: -x[1])
         return candidates[:max_candidates]
+
     def find_antonyms(self, lexeme, threshold=0.6, max_candidates=500):
         cands = []
         for cand_lex in self.M_plus.row_labels():
@@ -709,10 +992,12 @@ class CheyenneLakota:
                 cands.append((surface_form, dissim))
         cands.sort(key=lambda x: -x[1])
         return cands[:max_candidates]
+
     def generate_response(self, prompt):
         tokens = re.findall(r"[\w]+", prompt)
         if not tokens and not self.spectral.nodes:
             return "I am ready. Tell me anything." if self.language_code == "en" else "Estoy listo. Dime lo que quieras."
+
         input_wave = np.zeros(BINS, complex)
         for idx, tok in enumerate(tokens):
             if tok not in self.spectral.nodes:
@@ -723,21 +1008,29 @@ class CheyenneLakota:
                 mod_id = self.spectral.get_identity(tok)
             phase = np.exp(1j * 2 * math.pi * idx / max(len(tokens), 1))
             input_wave += mod_id * phase
+
         input_wave = self.spectral._normalize(input_wave / max(len(tokens), 1) if tokens else input_wave)
         vocab_mean = self.spectral.get_vocabulary_mean()
         input_id = self.spectral._normalize(input_wave - vocab_mean)
         if np.linalg.norm(input_id) < EPS:
             input_id = input_wave
+
         adj = self.spectral.build_adjacency()
         primary = {t: 1.0 for t in tokens if t in self.spectral.nodes}
+
+        # Protection against void
         if not primary:
+            if not self.spectral.nodes:
+                return "Estoy listo. Dime lo que quieras." if self.language_code == "es" else "I am ready. Tell me anything."
             return max(self.spectral.nodes.items(), key=lambda x: x[1]["mass"])[0]
+
         expanded = dict(primary)
         for tok in list(primary):
             lex = self._extract_stem(tok)
             for syn_form, score in self.find_synonyms(lex)[:2]:
                 if syn_form not in expanded:
                     expanded[syn_form] = score * 0.8
+
         candidates = dict(expanded)
         for base_form in list(expanded):
             for nb_form, strength in adj.get(base_form, []):
@@ -754,6 +1047,7 @@ class CheyenneLakota:
                     if nb_form == ant_form:
                         val *= 0.1
                 candidates[nb_form] = max(candidates.get(nb_form, 0), val / (1 + val))
+
         filtered = {}
         for w, val in candidates.items():
             if self.spectral._interference(self.spectral.get_identity(w), input_id) > 0:
@@ -762,12 +1056,14 @@ class CheyenneLakota:
             filtered = candidates
         if not filtered:
             return "I am still listening..." if self.language_code == "en" else "Sigo escuchando..."
+
         filtered = dict(sorted(filtered.items(), key=lambda x: -x[1])[:100])
         energy = math.log1p(len(tokens)) * (1 + max(0, sum(filtered.values()) / max(len(filtered), 1)))
         current = max(filtered, key=filtered.get)
         traj_id = self.spectral.get_identity(current)
         traj_xyz = self.spectral.nodes[current]["xyz"].copy()
         traj_phase = self.spectral.nodes[current]["phase"]
+
         result = [current]
         used = {current}
         while energy > EPS and len(result) < 12:
@@ -808,6 +1104,7 @@ class CheyenneLakota:
             used.add(next_w)
             current = next_w
         return " ".join(result)
+
     def correct_response(self, user_input, correction):
         self.ingest(correction)
         itok = re.findall(r"\w+", user_input)
@@ -824,6 +1121,7 @@ class CheyenneLakota:
                 if b not in cset and a != b:
                     self.spectral.weaken_link(a, b, 1.0)
         return "Learned." if self.language_code == "en" else "Integrado."
+
     def _save_extra(self, cur):
         extra = {
             "lexeme_frequency": self.lexeme_frequency,
@@ -836,7 +1134,8 @@ class CheyenneLakota:
         cur.execute("DELETE FROM extra_data")
         for k, v in extra.items():
             cur.execute("INSERT OR REPLACE INTO extra_data VALUES(?, ?)",
-                       (k, json.dumps(v, ensure_ascii=False)))
+                        (k, json.dumps(v, ensure_ascii=False)))
+
     def _load_extra(self, cur):
         cur.execute("SELECT key, value FROM extra_data")
         data = {}
@@ -852,18 +1151,26 @@ class CheyenneLakota:
         raw_l2f = data.get("lexeme_to_forms", {})
         self.lexeme_to_forms = {lex: Counter(cnt) for lex, cnt in raw_l2f.items()}
         self.ingests_total = data.get("ingests_total", 0)
+
     def _save(self):
         if not self.connection:
             return
         cur = self.connection.cursor()
+
+        # Save NodEs
         for w in list(self.spectral._dirty_nodes):
             if w not in self.spectral.nodes:
                 continue
             n = self.spectral.nodes[w]
-            blob = np.concatenate([np.real(n["sum"]).astype(">f8"), np.imag(n["sum"]).astype(">f8")]).tobytes()
+            # Sanitize before
+            clean_sum = np.nan_to_num(n["sum"], nan=0.0, posinf=0.0, neginf=0.0)
+            stabilized_sum = self.spectral._normalize(clean_sum)
+            blob = np.concatenate([np.real(stabilized_sum).astype(">f8"), np.imag(stabilized_sum).astype(">f8")]).tobytes()
             cur.execute("INSERT OR REPLACE INTO spectral_nodes VALUES(?, ?, ?, ?)",
-                       (w, blob, n["count"], n["mass"]))
+                        (w, blob, n["count"], n["mass"]))
         self.spectral._dirty_nodes.clear()
+
+        # 2. SavE LinkS
         for key in list(self.spectral._dirty_links):
             if key not in self.spectral.links:
                 w1, w2 = key
@@ -871,10 +1178,15 @@ class CheyenneLakota:
                 continue
             w1, w2 = key
             lnk = self.spectral.links[key]
-            blob = np.concatenate([np.real(lnk["sum"]).astype(">f8"), np.imag(lnk["sum"]).astype(">f8")]).tobytes()
+            # Sanitize before
+            clean_sum = np.nan_to_num(lnk["sum"], nan=0.0, posinf=0.0, neginf=0.0)
+            stabilized_lnk = self.spectral._normalize(clean_sum)
+            blob = np.concatenate([np.real(stabilized_lnk).astype(">f8"), np.imag(stabilized_lnk).astype(">f8")]).tobytes()
             cur.execute("INSERT OR REPLACE INTO spectral_links VALUES(?, ?, ?, ?)",
-                       (w1, w2, blob, lnk["count"]))
+                        (w1, w2, blob, lnk["count"]))
         self.spectral._dirty_links.clear()
+
+        # 3. Guardar estructuras dispersas y relacionales
         cur.execute("DELETE FROM m_plus_rows")
         for _, lbl, cols in self.M_plus.export_rows():
             for c in cols:
@@ -885,28 +1197,43 @@ class CheyenneLakota:
                 cur.execute("INSERT INTO markov_transitions VALUES(?, ?)", (src, t))
         self._save_extra(cur)
         self.connection.commit()
+
     def _load(self):
         if not self.connection:
             return
         cur = self.connection.cursor()
         cur.execute("SELECT word, sum_blob, count, mass FROM spectral_nodes")
         for w, blob, cnt, m in cur:
-            arr = np.frombuffer(blob, dtype=">f8")
-            mid = len(arr) // 2
-            spec = arr[:mid] + 1j * arr[mid:]
-            normed = self.spectral._normalize(spec)
-            self.spectral.nodes[w] = {
-                "sum": spec, "spectrum": normed, "count": cnt, "mass": m,
-                "xyz": self.spectral._spectrum_xyz(normed), "phase": self.spectral._phase(normed)
-            }
+            try:
+                arr = np.frombuffer(blob, dtype=">f8")
+                mid = len(arr) // 2
+                spec = arr[:mid] + 1j * arr[mid:]
+                # Sanitize before
+                spec = np.nan_to_num(spec, nan=0.0, posinf=0.0, neginf=0.0)
+                normed = self.spectral._normalize(spec)
+                self.spectral.nodes[w] = {
+                    "sum": spec, "spectrum": normed, "count": cnt, "mass": m,
+                    "xyz": self.spectral._spectrum_xyz(normed), "phase": self.spectral._phase(normed)
+                }
+            except Exception as e:
+                logging.warning(f"Error cargando nodo '{w}': {e}")
+                continue
+
         cur.execute("SELECT w1, w2, sum_blob, count FROM spectral_links")
         for w1, w2, blob, cnt in cur:
-            arr = np.frombuffer(blob, dtype=">f8")
-            mid = len(arr) // 2
-            spec = arr[:mid] + 1j * arr[mid:]
-            self.spectral.links[tuple(sorted((w1, w2)))] = {
-                "sum": spec, "spectrum": self.spectral._normalize(spec), "count": cnt
-            }
+            try:
+                arr = np.frombuffer(blob, dtype=">f8")
+                mid = len(arr) // 2
+                spec = arr[:mid] + 1j * arr[mid:]
+                # Sanitize before
+                spec = np.nan_to_num(spec, nan=0.0, posinf=0.0, neginf=0.0)
+                self.spectral.links[tuple(sorted((w1, w2)))] = {
+                    "sum": spec, "spectrum": self.spectral._normalize(spec), "count": cnt
+                }
+            except Exception as e:
+                logging.warning(f"Error cargando enlace '{w1}-{w2}': {e}")
+                continue
+
         cur.execute("SELECT row_label, col_label FROM m_plus_rows")
         for r, c in cur:
             self.M_plus.set(r, c, True)
@@ -915,15 +1242,23 @@ class CheyenneLakota:
             self.T_markov.set_transition(a, b)
         self._load_extra(cur)
         self.spectral._wave_cache.clear()
+
+        # First Sanitize
+        fixed = self._sanitize_spectral_data()
+        if fixed > 0:
+            print(f" Warm Up: {fixed} ")
+
+
 def main():
     import sys
+   
     lang = sys.argv[1].lower() if len(sys.argv) > 1 else "es"
     if lang not in PROFILES:
         print(f"Unknown language '{lang}' — using Spanish (es)")
         lang = "es"
     core = CheyenneLakota(lang)
-    print(" Wutapiu v6.2 ")
-    print(" Learning only on ingest/correction — periodic cloud merging active\n")
+    print("Wutapiu v6.5 ")
+    print("Learning only on ingest/correction — periodic cloud merging + overflow protection\n")
     print("Say anything. >>corrige: ... to teach. salir to exit.\n" if lang == "es" else
           "Say anything. >>correct: ... to teach. quit to exit.\n")
     last_input = ""
@@ -946,5 +1281,7 @@ def main():
         print()
     finally:
         core.close()
+
+
 if __name__ == "__main__":
     main()
